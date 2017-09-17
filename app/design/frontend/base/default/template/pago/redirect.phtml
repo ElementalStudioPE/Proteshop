@@ -1,0 +1,217 @@
+<?php
+// Nueva orden
+$order = new Mage_Sales_Model_Order();
+
+//Credenciales
+$llavePublica = Mage::getStoreConfig( 'payment/pago/llave_publica' );
+
+$checkout = Mage::getSingleton('checkout/session');
+$orderId =  $checkout->getLastRealOrderId();
+
+// Obteniendo Data
+$order = Mage::getModel('sales/order')->loadByIncrementId($orderId);
+$currency  = $order->getOrderCurrencyCode();
+$CustomerEmail = $order->getCustomerEmail();
+$Total = number_format($order->getGrandTotal(),2,'','');
+
+$ProductName = '';
+$items = $order->getAllItems();
+if ($items)
+  {
+      foreach($items as $item)
+      {
+        if ($item->getParentItem()) continue;
+  $ProductName .= $item->getName() . '; ';
+      }
+  }
+$ProductName = rtrim($ProductName, '; ');
+
+?>
+
+
+<h4><?php echo $this->__('Paga con tarjeta Visa, Mastercard, American Express o DinersClub ') ?></h4>
+
+Numero de orden: <?php echo $orderId; ?> <br> <br>
+
+
+<p>En unos instantes aparecerá el formulario de pago. En caso de no aparecer, hacer click debajo.</p>
+
+
+<button id="btn_pago" class="button">Pagar</button>
+
+
+
+
+<!-- Botón de pago de Culqi -->
+<style>
+#message-good, #message-error{
+  display:none;
+}
+
+</style>
+
+<div id="message-good"><ul class="messages"><li class="success-msg">
+  <ul><li><span id="notify-ok"></span></li></ul></li></ul>
+</div>
+<div id="message-error"><ul class="messages"><li class="error-msg">
+  <ul><li><span id="notify-error"></span></li></ul></li></ul>
+</div>
+
+
+
+        <script type="text/javascript" src="https://checkout.culqi.com/plugins/v2/"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+
+        <script type="text/javascript">
+
+         Culqi.publicKey  = '<?= $llavePublica ?>';
+
+         Culqi.settings({
+            title: '<?= $this->getLayout()->getBlock('head')->getTitle(); ?>',
+            currency: '<?= $currency ?>',
+            description: '<?= $ProductName ?>',
+            amount: '<?= $Total ?>'
+         });
+
+        </script>
+
+        <!-- De culqi-helpers.js -->
+        <script>
+        /**
+        * EnvÃ­a un string en formato JSON con el mÃ©todo POST
+        *
+        * @param string url
+        * @param string data
+        * @param function success (optional)
+        * @return object
+        */
+        function PostData(url, data, success)
+        {
+          // Devuelve la respuesta del servidor luego de enviarse la peticiÃ³n
+          this.respuesta = function () {
+            return xhttp.responseText;
+          };
+          // Si success no estÃ¡ definido, se le da un valor de undefined
+          success = success || undefined;
+          // Se crea una peticiÃ³n que serÃ¡ enviada a la url
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function () {
+            if (xhttp.readyState == 4 && xhttp.status == 200) {
+              console.log('Informacion enviada al servidor.');
+              if (!(success === undefined)) {
+                success();
+              }
+            }
+          };
+          // Define el mÃ©todo de envÃ­o y envÃ­a los datos
+          xhttp.open('POST', url, true);
+          xhttp.send(data);
+        }
+        /**
+        * EnvÃ­a una peticiÃ³n POST con informaciÃ³n y redirige a la url
+        *
+        * @param string url
+        * @param string json
+        */
+        function post(url, json)
+        {
+
+          // Convertimos el json en un objeto
+          var obj = JSON.parse(json);
+
+          // Creamos un array con los nombres de las propiedades del objeto
+          var objKeys = Object.keys(obj);
+          // Creamos elementos <input> con el name=clave y value=valor del objeto
+          var inputs = [];
+          for (i = 0; i < objKeys.length; i++) {
+            inputs[i] = document.createElement('input');
+            inputs[i].name = objKeys[i];
+            inputs[i].value = obj[objKeys[i]];
+          }
+
+          var form = document.createElement('form');
+          document.body.appendChild(form);
+          form.action = url;
+          form.method = 'post';
+          for (i = 0; i < objKeys.length; i++) {
+            form.appendChild(inputs[i]);
+          }
+          form.submit();
+        }
+        </script>
+
+        <!-- Aquí configuramos el botón de pago de Culqi. -->
+        <script>
+
+        //Culqi.abrir();
+        // Activa el botón de pago
+        $('#btn_pago').on('click', function(e) {
+        // Realizas el pago usando Culqi.
+            Culqi.open();
+            e.preventDefault();
+        });
+
+        // Recibimos Token del Culqi.js
+        // Tratando respuesta con AJAX (jQuery)
+
+        // Recibimos Token del Culqi.js=================================================
+        function culqi() {
+
+          if(Culqi.error) {
+            // Mostramos JSON de objeto error en consola
+            console.log(Culqi.error);
+            alert(Culqi.error.mensaje);
+          } else {
+            console.log(Culqi.token.id);
+
+            $j(document).ajaxStart(function(){
+              //$j('#culqi_notify').empty();
+            });
+            $j(document).ajaxComplete(function(){
+              //$j('#info_payment').waitMe('hide');
+            });
+
+            $.ajax({
+              url: "<?php echo $this->getUrl('pago/ajax/check');?>",
+              type: "POST",
+              data: { token_id: Culqi.token.id, order_id: '<?= $orderId ?>', installments: Culqi.token.metadata.installments },
+              dataType: 'json',
+              type : 'post',
+              success: function(data) {
+                console.log(data)
+                //console.log(data);
+                var obj = JSON.parse(data);
+
+                if (obj.object === "error") {
+
+                  alert(obj.user_message);
+
+                  post('<?php echo Mage::helper('pago')->getPaymentGatewayUrl(); ?>', jsonResponse('fail'));
+
+                } else if (obj.object === "charge") {
+
+                  alert(obj.outcome.user_message);
+
+                  // Procesar Venta en Magento
+                  post('<?php echo Mage::helper('pago')->getPaymentGatewayUrl(); ?>', jsonResponse('done'));
+
+                } else {
+                  alert('Hubo algun problema en el procesamiento.');
+                }
+
+              },
+              error: function() {
+                alert('Hubo algún problema en el procesamiento de la compra. Intenta nuevamente por favor.');
+              }
+            });
+          }
+        };
+
+        function jsonResponse(message){
+          return JSON.stringify({
+               orderId: '<?php echo $orderId; ?>',
+               statusOrder: message
+           });
+        };
+
+        </script>
